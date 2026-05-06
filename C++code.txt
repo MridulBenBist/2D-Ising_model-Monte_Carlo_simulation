@@ -1,0 +1,214 @@
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <ctime>
+#include <cmath>
+
+using namespace std;
+
+// Global Constants
+const int L = 50; // Grid size
+const double J = 1;    // Coupling constant (for computational model)
+const double J_onsager = 0.5; // Half the coupling constant for Onsager's model
+const double kB = 1;   // Boltzmann constant in J/K
+
+// Function Prototypes
+vector<vector<int>> createGrid();
+double calculateEnergy(const vector<vector<int>>& grid);
+double calculateEnergy_ij(const vector<vector<int>>& grid, int i, int j);
+double calculateProbability(double energy_i, double temperature);
+double generateRandomNumber();
+void printGrid(const vector<vector<int>>& grid, double energy);
+void printEnergy(const vector<vector<int>>& grid);
+double calculateDeltaEnergy(const vector<vector<int>>& grid, int i, int j);
+void MC(vector<vector<int>>& grid, double temperature, vector<double>& magnetization_vs_step);
+double calculateAverageMagnetization(const vector<vector<int>>& grid);
+double calculateOnsagerMagnetization(double temperature);
+void plotData(const vector<double>& x, const vector<double>& y, const string& filename);
+void plotMagnetizationVsSteps(const vector<vector<double>>& magnetization_vs_step, const vector<double>& temperatures);
+
+// Function to create a grid with random spin configurations
+vector<vector<int>> createGrid() {
+    vector<vector<int>> grid(L, vector<int>(L, 0)); // Initialize a 2D grid of size LxL with all elements initialized to 0
+    srand(time(NULL)); // Seed the random number generator with the current time
+
+    // Iterate through each row and column of the grid
+    for (int i = 0; i < L; ++i) {
+        for (int j = 0; j < L; ++j) {
+            // Assign a random spin (+1 or -1) to each grid element
+            grid[i][j] = (rand() % 2 == 0) ? 1 : -1;
+        }
+    }
+
+    return grid; // Return the generated grid
+}
+
+// Function to calculate the energy of the system
+double calculateEnergy(const vector<vector<int>>& grid) {
+    double energy = 0.0;
+    double half = 0.5;
+    for (int i = 0; i < L; ++i) {
+        for (int j = 0; j < L; ++j) {
+            energy += -J * half * grid[i][j] * (grid[(i + 1) % L][j] + grid[(i - 1 + L) % L][j] + grid[i][(j + 1) % L] + grid[i][(j - 1 + L) % L]);
+        }
+    }
+    return energy / (L * L);
+}
+
+// Function to calculate the energy of spin (i,j)
+double calculateEnergy_ij(const vector<vector<int>>& grid, int i, int j) {
+    double sum_NN_spin = (grid[(i + 1) % L][j] + grid[(i - 1 + L) % L][j] + grid[i][(j + 1) % L] + grid[i][(j - 1 + L) % L]);
+    double half = 0.5;
+    double energy_ij = -J * half * grid[i][j] * sum_NN_spin;
+    return energy_ij;
+}
+
+// Function to calculate the probability at each site
+double calculateProbability(double energy_i, double temperature) {
+    return exp(-energy_i / (kB * temperature));
+}
+
+// Function to generate a random number between 0 and 1
+double generateRandomNumber() {
+    return (double)rand() / RAND_MAX;
+}
+
+// Function to print the spin values on the grid system
+void printGrid(const vector<vector<int>>& grid, double energy) {
+    cout << "\n \n \n" << "Energy of the system: " << energy << endl;
+    cout << "grid:" << endl;
+    for (int i = 0; i < L; ++i) {
+        for (int j = 0; j < L; ++j) {
+            cout << grid[i][j] << " ";
+        }
+        cout << endl;
+    }
+}
+
+// Function to calculate and print the energy of each site
+void printEnergy(const vector<vector<int>>& grid) {
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < L; j++) {
+            double E_i = calculateEnergy_ij(grid, i, j);
+            cout << E_i << "\t";
+        }
+        cout << endl;
+    }
+}
+
+// Function to calculate the change in energy when a spin flip occurs
+double calculateDeltaEnergy(const vector<vector<int>>& grid, int i, int j) {
+    vector<vector<int>> tempGrid = grid; // Create a temporary copy of the grid
+    double current_energy = calculateEnergy_ij(grid, i, j);
+    tempGrid[i][j] *= -1; // Flip the spin temporarily
+    double new_energy = calculateEnergy_ij(tempGrid, i, j);
+    return new_energy - current_energy;
+}
+
+// Monte Carlo Simulation
+void MC(vector<vector<int>>& grid, double temperature, vector<double>& magnetization_vs_step) {
+    double T = temperature;
+    for (int i = 0; i < L; i++) {
+        for (int j = 0; j < L; j++) {
+            double delta_E = calculateDeltaEnergy(grid, i, j);
+            if (delta_E <= 0 || generateRandomNumber() < exp(-delta_E / (kB * T))) {
+                grid[i][j] *= -1;
+            }
+        }
+    }
+    // Calculate and store the magnetization after each MC step
+    magnetization_vs_step.push_back(calculateAverageMagnetization(grid));
+}
+
+// Function to calculate the average magnetization of the system
+double calculateAverageMagnetization(const vector<vector<int>>& grid) {
+    double sum = 0.0;
+    for (int i = 0; i < L; ++i) {
+        for (int j = 0; j < L; ++j) {
+            sum += grid[i][j];
+        }
+    }
+    return sum / (L * L);
+}
+
+// Function to calculate Onsager's analytic solution for magnetization
+double calculateOnsagerMagnetization(double temperature) {
+    double tanhArgument = 2.0 * J_onsager / (kB * temperature); // Use half the exchange value
+    return pow(1.0 - pow(sinh(tanhArgument), -4.0), 1.0 / 8.0);
+}
+
+// Function to plot data
+void plotData(const vector<double>& x, const vector<double>& y, const string& filename) {
+    ofstream outputFile(filename);
+    if (outputFile.is_open()) {
+        for (size_t i = 0; i < x.size(); ++i) {
+            outputFile << x[i] << "\t" << y[i] << endl;
+        }
+        outputFile.close();
+        cout << "Data plotted in '" << filename << "'." << endl;
+    } else {
+        cerr << "Failed to open the output file." << endl;
+    }
+}
+
+// Function to plot magnetization vs. MC steps for each temperature
+void plotMagnetizationVsSteps(const vector<vector<double>>& magnetization_vs_step, const vector<double>& temperatures) {
+    for (size_t t = 0; t < temperatures.size(); ++t) {
+        string filename = "magnetization_vs_steps_T" + to_string(temperatures[t]) + ".txt";
+        // Create a dummy vector for x-axis values (MC steps)
+        vector<double> mc_steps(magnetization_vs_step[t].size());
+        for (size_t i = 0; i < mc_steps.size(); ++i) {
+            mc_steps[i] = i + 1; // Fill the dummy vector with values from 1 to the size of the magnetization vector
+        }
+        plotData(mc_steps, magnetization_vs_step[t], filename);
+    }
+}
+
+// Main Function
+int main() {
+    // Define the range of temperatures to explore
+    vector<double> temperatures = {0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0};
+
+    // Define the number of Monte Carlo steps and equilibrium steps
+    const int MC_steps = 100;
+    const int equilibrium_steps = 50; // Adjust as needed
+
+    // Vectors to store magnetization vs. MC steps for each temperature
+    vector<vector<double>> magnetization_vs_step(temperatures.size());
+
+    // Create the grid with random spin configurations for each temperature
+    vector<vector<int>> grid = createGrid();
+
+    // Loop over each temperature
+    for (size_t t = 0; t < temperatures.size(); ++t) {
+        // Vectors to store magnetization for equilibrium steps
+        vector<double> magnetization_eq;
+        double time_avg_magnetization = 0.0;
+
+        // Perform MC steps
+        for (int step = 0; step < MC_steps; ++step) {
+            MC(grid, temperatures[t], magnetization_vs_step[t]);
+
+            // Calculate average magnetization after equilibration
+            if (step >= equilibrium_steps) {
+                double magnetization = calculateAverageMagnetization(grid);
+                time_avg_magnetization += magnetization;
+            }
+        }
+
+        // Calculate time-averaged magnetization
+        time_avg_magnetization /= (MC_steps - equilibrium_steps);
+    }
+
+    // Plot magnetization vs. MC steps for each temperature
+    plotMagnetizationVsSteps(magnetization_vs_step, temperatures);
+
+    // Compare with Onsager's analytic solution
+    vector<double> onsagerMagnetization;
+    for (double temp : temperatures) {
+        onsagerMagnetization.push_back(calculateOnsagerMagnetization(temp));
+    }
+    plotData(temperatures, onsagerMagnetization, "onsager_magnetization_vs_temperature.txt");
+
+    return 0;
+}
